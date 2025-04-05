@@ -48,6 +48,22 @@ export const ProductUpdate = () => {
     },[])
 
     const handleProductUpdate=(data)=>{
+        if(data.stockQuantity < 0){
+            toast.error("Stock quantity cannot be negative")
+            return
+        }
+        if(data.price < 0){
+            toast.error("price  cannot be negative")
+            return
+        }
+        if(data.discountPercentage < 0){
+            toast.error("Discount percentage cannot be negative")
+            return
+        }
+        if(data.discountPercentage > 100){
+            toast.error("Discount percentage cannot be greater than 100")
+            return
+        }
         const productUpdate={...data,_id:selectedProduct._id,images:[data?.image0,data?.image1,data?.image2,data?.image3]}
         delete productUpdate?.image0
         delete productUpdate?.image1
@@ -123,7 +139,7 @@ export const ProductUpdate = () => {
 
                 <Stack>
                     <Typography variant='h6'  fontWeight={400} gutterBottom>Stock Quantity</Typography>
-                    <TextField type='number' {...register("stockQuantity",{required:"Stock Quantity is required",value:selectedProduct.stockQuantity})}/>
+                    <TextField type='number' {...register("stockQuantity",{required:"Stock Quantity is required",value:selectedProduct.stockQuantity})} />
                 </Stack>
                 <Stack>
                     <Typography variant='h6'  fontWeight={400} gutterBottom>Thumbnail</Typography>
