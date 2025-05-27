@@ -19,6 +19,31 @@ import { Grid, FormControl } from '@mui/material';
 
 const stripePromise = loadStripe('pk_test_51QcpGWD8KDgrStpyI2pSAKf2v5vPeprN5Mu9z0wS04UA8VYRtR0sB8euC8MACe0EZ50kDoqCgWHkkzYytJKwbU6400nJTke8mK'); // Replace with your Stripe Publishable Key
 
+const CARD_ELEMENT_OPTIONS = {
+    style: {
+        base: {
+            color: '#32325d',
+            fontFamily: '"Helvetica Neue", Helvetica, sans-serif',
+            fontSmoothing: 'antialiased',
+            fontSize: '16px',
+            '::placeholder': {
+                color: '#aab7c4'
+            }
+        },
+        invalid: {
+            color: '#fa755a',
+            iconColor: '#fa755a'
+        }
+    }
+};
+
+const COUNTRY_TO_CODE = {
+    'India': 'IN',
+    'United States': 'US',
+    'United Kingdom': 'GB',
+    // Add more country mappings as needed
+};
+
 const CheckoutForm = ({ orderTotal, selectedAddress, cartItems }) => {
     const stripe = useStripe();
     const elements = useElements();
@@ -27,30 +52,110 @@ const CheckoutForm = ({ orderTotal, selectedAddress, cartItems }) => {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [paymentStatus, setPaymentStatus] = useState(null);
+    const [cardError, setCardError] = useState(null);
+
+    // Convert country name to ISO code
+    const getCountryCode = (countryName) => {
+        if (!countryName) return 'US'; // default to US if no country provided
+        
+        // If it's already a 2-letter code, return it
+        if (countryName.length === 2 && countryName === countryName.toUpperCase()) {
+            return countryName;
+        }
+
+        // Try to get the country code from our mapping
+        const code = COUNTRY_TO_CODE[countryName];
+        if (code) return code;
+
+        // If we don't have a mapping, log it and default to US
+        console.warn(`Country code not found for: ${countryName}. Defaulting to US`);
+        return 'US';
+    };
+
+    // Handle card input change
+    const handleCardChange = (event) => {
+        if (event.error) {
+            setCardError(event.error.message);
+        } else {
+            setCardError(null);
+        }
+    };
 
     const handleCardPayment = async () => {
-        if (!stripe || !elements) return;
+        if (!stripe || !elements) {
+            setPaymentStatus('Payment system not ready. Please try again.');
+            return;
+        }
+
+        if (!selectedAddress) {
+            setPaymentStatus('Please select a delivery address.');
+            return;
+        }
+
+        // Validate postal code
+        if (!selectedAddress.postalCode || selectedAddress.postalCode.toString().length < 5) {
+            setPaymentStatus('Please enter a valid postal code in your address (minimum 5 digits).');
+            return;
+        }
 
         setLoading(true);
+        setPaymentStatus(null);
+        setCardError(null);
 
         try {
-            // Backend call to create payment intent
+            console.log('Creating payment intent for amount:', orderTotal + SHIPPING + TAXES);
+            
             const { data } = await axios.post('http://localhost:8000/create-payment-intent', {
-                amount: orderTotal + SHIPPING + TAXES, // Total amount including shipping and taxes
+                amount: Math.round((orderTotal + SHIPPING + TAXES) * 100),
+            }).catch(error => {
+                console.error('Error creating payment intent:', error.response?.data || error.message);
+                throw new Error('Failed to create payment. Please try again.');
             });
+
+            if (!data || !data.clientSecret) {
+                throw new Error('Invalid response from payment server');
+            }
 
             const { clientSecret } = data;
+            console.log('Payment intent created successfully');
 
-            const result = await stripe.confirmCardPayment(clientSecret, {
+            // Format postal code to ensure it's a string and has proper length
+            const formattedPostalCode = selectedAddress.postalCode.toString().padStart(5, '0');
+            
+            // Get the country code
+            const countryCode = getCountryCode(selectedAddress?.country);
+            console.log('Using country code:', countryCode, 'for country:', selectedAddress?.country);
+
+            // Prepare the payment method data
+            const paymentMethodData = {
                 payment_method: {
                     card: elements.getElement(CardElement),
-                },
-            });
+                    billing_details: {
+                        name: loggedInUser?.name || '',
+                        email: loggedInUser?.email || '',
+                        address: {
+                            line1: selectedAddress?.street || '',
+                            city: selectedAddress?.city || '',
+                            state: selectedAddress?.state || '',
+                            postal_code: formattedPostalCode,
+                            country: countryCode
+                        }
+                    }
+                }
+            };
+
+            console.log('Confirming card payment...');
+            const result = await stripe.confirmCardPayment(clientSecret, paymentMethodData);
 
             if (result.error) {
-                setPaymentStatus('Payment failed. Please try again.');
-                console.error(result.error.message);
+                console.error('Payment confirmation error:', result.error);
+                if (result.error.type === 'card_error' || result.error.type === 'validation_error') {
+                    setCardError(result.error.message);
+                } else {
+                    setPaymentStatus('An unexpected error occurred. Please try again.');
+                }
             } else if (result.paymentIntent.status === 'succeeded') {
+                console.log('Payment successful:', result.paymentIntent.id);
                 setPaymentStatus('Payment successful!');
                 const order = {
                     user: loggedInUser._id,
@@ -58,15 +163,18 @@ const CheckoutForm = ({ orderTotal, selectedAddress, cartItems }) => {
                     address: selectedAddress,
                     paymentMode: 'CARD',
                     total: orderTotal + SHIPPING + TAXES,
+                    paymentIntentId: result.paymentIntent.id
                 };
-                // Dispatch order creation action
                 dispatch(createOrderAsync(order));
                 dispatch(resetCartByUserIdAsync(loggedInUser._id));
                 navigate(`/order-success/${result.paymentIntent.id}`);
+            } else {
+                console.warn('Unexpected payment status:', result.paymentIntent.status);
+                setPaymentStatus('Payment status unclear. Please check your order status.');
             }
         } catch (error) {
-            console.error(error);
-            setPaymentStatus('Payment failed. Please try again.');
+            console.error('Payment processing error:', error);
+            setPaymentStatus(error.message || 'Payment failed. Please check your card details and try again.');
         } finally {
             setLoading(false);
         }
@@ -75,16 +183,33 @@ const CheckoutForm = ({ orderTotal, selectedAddress, cartItems }) => {
     return (
         <Stack spacing={3}>
             <Typography variant="h5">Card Payment</Typography>
-            <CardElement />
+            <Box sx={{ border: '1px solid #e0e0e0', padding: 2, borderRadius: 1 }}>
+                <CardElement 
+                    options={{
+                        ...CARD_ELEMENT_OPTIONS,
+                        hidePostalCode: true // We're using the address form postal code
+                    }} 
+                    onChange={handleCardChange}
+                />
+            </Box>
+            {cardError && (
+                <Typography color="error" variant="body2">
+                    {cardError}
+                </Typography>
+            )}
             <LoadingButton
                 variant="contained"
                 onClick={handleCardPayment}
-                disabled={!stripe || loading}
+                disabled={!stripe || loading || !!cardError}
                 loading={loading}
             >
-                {loading ? 'Processing...' : 'Pay Now'}
+                {loading ? 'Processing...' : `Pay $${(orderTotal + SHIPPING + TAXES).toFixed(2)}`}
             </LoadingButton>
-            {paymentStatus && <Typography>{paymentStatus}</Typography>}
+            {paymentStatus && (
+                <Typography color={paymentStatus.includes('successful') ? 'success.main' : 'error.main'}>
+                    {paymentStatus}
+                </Typography>
+            )}
         </Stack>
     );
 };
