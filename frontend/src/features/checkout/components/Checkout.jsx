@@ -4,12 +4,12 @@ import React, { useEffect, useState } from 'react';
 import { Cart } from '../../cart/components/Cart';
 import { useForm } from 'react-hook-form';
 import { loadStripe } from '@stripe/stripe-js';
-import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
+import { CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { useDispatch, useSelector } from 'react-redux';
 import { addAddressAsync, selectAddressStatus, selectAddresses } from '../../address/AddressSlice';
 import { selectLoggedInUser } from '../../auth/AuthSlice';
 import { Link, useNavigate } from 'react-router-dom';
-import { createOrderAsync, selectCurrentOrder, selectOrderStatus } from '../../order/OrderSlice';
+import { createOrderAsync, selectCurrentOrder } from '../../order/OrderSlice';
 import { resetCartByUserIdAsync, selectCartItems } from '../../cart/CartSlice';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { SHIPPING, TAXES } from '../../../constants';
@@ -217,14 +217,12 @@ const CheckoutForm = ({ orderTotal, selectedAddress, cartItems }) => {
 export const Checkout = () => {
     const addresses = useSelector(selectAddresses);
     const [selectedAddress, setSelectedAddress] = useState(addresses[0]);
-    const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('cash');
-    const { register, handleSubmit, reset, formState: { errors } } = useForm();
+    const { register, handleSubmit, reset } = useForm();
     const dispatch = useDispatch();
     const loggedInUser = useSelector(selectLoggedInUser);
     const addressStatus = useSelector(selectAddressStatus);
     const navigate = useNavigate();
     const cartItems = useSelector(selectCartItems);
-    const orderStatus = useSelector(selectOrderStatus);
     const currentOrder = useSelector(selectCurrentOrder);
     const orderTotal = cartItems.reduce((acc, item) => (item.product.price * item.quantity) + acc, 0);
     const theme = useTheme();
@@ -237,29 +235,18 @@ export const Checkout = () => {
         } else if (addressStatus === 'rejected') {
             alert('Error adding your address');
         }
-    }, [addressStatus]);
+    }, [addressStatus, reset]);
 
     useEffect(() => {
         if (currentOrder && currentOrder?._id) {
             dispatch(resetCartByUserIdAsync(loggedInUser?._id));
             navigate(`/order-success/${currentOrder?._id}`);
         }
-    }, [currentOrder]);
+    }, [currentOrder, dispatch, loggedInUser?._id, navigate]);
 
     const handleAddAddress = (data) => {
         const address = { ...data, user: loggedInUser._id };
         dispatch(addAddressAsync(address));
-    };
-
-    const handleCreateOrder = () => {
-        const order = {
-            user: loggedInUser._id,
-            items: cartItems,
-            address: selectedAddress,
-            paymentMode: selectedPaymentMethod,
-            total: orderTotal + SHIPPING + TAXES,
-        };
-        dispatch(createOrderAsync(order));
     };
 
     return (
