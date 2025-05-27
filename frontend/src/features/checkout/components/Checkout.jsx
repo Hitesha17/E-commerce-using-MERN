@@ -214,9 +214,54 @@ const CheckoutForm = ({ orderTotal, selectedAddress, cartItems }) => {
     );
 };
 
+const PaymentMethodSelector = ({ selectedMethod, onMethodChange }) => {
+    return (
+        <Stack spacing={2}>
+            <Typography variant="h6">Select Payment Method</Typography>
+            <Stack direction="row" spacing={2}>
+                <Paper 
+                    sx={{ 
+                        p: 2, 
+                        cursor: 'pointer',
+                        border: selectedMethod === 'CARD' ? '2px solid #1976d2' : '1px solid #e0e0e0',
+                        bgcolor: selectedMethod === 'CARD' ? 'action.hover' : 'background.paper'
+                    }}
+                    onClick={() => onMethodChange('CARD')}
+                >
+                    <Stack direction="row" alignItems="center" spacing={1}>
+                        <Radio checked={selectedMethod === 'CARD'} />
+                        <Stack>
+                            <Typography variant="subtitle1">Credit/Debit Card</Typography>
+                            <Typography variant="body2" color="text.secondary">Pay securely with your card</Typography>
+                        </Stack>
+                    </Stack>
+                </Paper>
+                <Paper 
+                    sx={{ 
+                        p: 2, 
+                        cursor: 'pointer',
+                        border: selectedMethod === 'COD' ? '2px solid #1976d2' : '1px solid #e0e0e0',
+                        bgcolor: selectedMethod === 'COD' ? 'action.hover' : 'background.paper'
+                    }}
+                    onClick={() => onMethodChange('COD')}
+                >
+                    <Stack direction="row" alignItems="center" spacing={1}>
+                        <Radio checked={selectedMethod === 'COD'} />
+                        <Stack>
+                            <Typography variant="subtitle1">Cash on Delivery</Typography>
+                            <Typography variant="body2" color="text.secondary">Pay when you receive</Typography>
+                        </Stack>
+                    </Stack>
+                </Paper>
+            </Stack>
+        </Stack>
+    );
+};
+
 export const Checkout = () => {
     const addresses = useSelector(selectAddresses);
     const [selectedAddress, setSelectedAddress] = useState(addresses[0]);
+    const [paymentMethod, setPaymentMethod] = useState('CARD');
     const { register, handleSubmit, reset } = useForm();
     const dispatch = useDispatch();
     const loggedInUser = useSelector(selectLoggedInUser);
@@ -247,6 +292,22 @@ export const Checkout = () => {
     const handleAddAddress = (data) => {
         const address = { ...data, user: loggedInUser._id };
         dispatch(addAddressAsync(address));
+    };
+
+    const handleCODOrder = () => {
+        if (!selectedAddress) {
+            alert('Please select a delivery address');
+            return;
+        }
+
+        const order = {
+            user: loggedInUser._id,
+            items: cartItems,
+            address: selectedAddress,
+            paymentMode: 'COD',
+            total: orderTotal + SHIPPING + TAXES,
+        };
+        dispatch(createOrderAsync(order));
     };
 
     return (
@@ -332,9 +393,33 @@ export const Checkout = () => {
                 <Cart />
                 <Stack flexDirection={'row'} justifyContent={'space-between'} mt={2}>
                     <Typography variant="h5">Total</Typography>
-                    <Typography variant="h5">{orderTotal + SHIPPING + TAXES}</Typography>
+                    <Typography variant="h5">${(orderTotal + SHIPPING + TAXES).toFixed(2)}</Typography>
                 </Stack>
-                <CheckoutForm orderTotal={orderTotal} selectedAddress={selectedAddress} cartItems={cartItems} />
+                
+                <Stack spacing={3} mt={3}>
+                    <PaymentMethodSelector 
+                        selectedMethod={paymentMethod}
+                        onMethodChange={setPaymentMethod}
+                    />
+                    
+                    {paymentMethod === 'CARD' ? (
+                        <CheckoutForm 
+                            orderTotal={orderTotal} 
+                            selectedAddress={selectedAddress} 
+                            cartItems={cartItems} 
+                        />
+                    ) : (
+                        <LoadingButton
+                            variant="contained"
+                            onClick={handleCODOrder}
+                            fullWidth
+                            size="large"
+                            sx={{ mt: 2 }}
+                        >
+                            Place Order - Cash on Delivery
+                        </LoadingButton>
+                    )}
+                </Stack>
             </Box>
         </Stack>
     );
