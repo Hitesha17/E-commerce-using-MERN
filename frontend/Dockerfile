@@ -3,7 +3,7 @@ FROM node:20-slim AS builder
 WORKDIR /app
 
 ENV GENERATE_SOURCEMAP=false
-ENV NODE_OPTIONS=--max_old_space_size=2048
+ENV NODE_OPTIONS=--max_old_space_size=768
 
 COPY package*.json ./
 
